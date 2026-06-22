@@ -40,8 +40,13 @@ raised an uncaught `ReadTimeout` that propagated through `asyncio.gather` and ki
    (transient blips are normal over thousands of calls). Timeout 120→180s, retries 4→6.
 2. `evaluate_candidate` uses `gather(return_exceptions=True)` — a trajectory that exhausts retries
    degrades to **reward 0** and logs a warning, instead of crashing the generation/run.
-3. Next run uses `nohup` (survives an ssh drop) and a relative log path (the earlier detach failures
-   were `\$HOME` quoting bugs across the ssh boundary, not nohup itself).
+3. Next run uses `nohup` (survives an ssh drop). **Detach gotcha (root-caused):** `nohup cmd > log &`
+   inside a long `a && b && read KEY && nohup ... &` chain silently failed because `&` binds the
+   *whole* `&&` list — so the chain (including `read KEY`) ran in a backgrounded subshell whose stdin
+   is `/dev/null`, the `read` hit EOF, the chain aborted before launching python, and `$!` was just
+   the dead subshell. Fix: keep the key-`read` in the foreground and background only the launch with a
+   brace group: `... && export KEY && { nohup python ... > log 2>&1 </dev/null & }`. Verified the log
+   is created and training proceeds.
 
 **Lesson:** a long API-bound training loop must treat transient network errors as expected, not fatal.
 CPU smoke ladder still 4/4 green after the fixes.
