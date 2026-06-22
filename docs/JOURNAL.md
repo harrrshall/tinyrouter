@@ -367,3 +367,25 @@ kimi-k2p6 **0.95 / 4.00**, glm-5p2 **1.40 / 4.40** (GLM-5.1 proxy; 5.2 not separ
 Output is ~$4/M, so the projection rose from ~$34 (assumed) to **~$65 total** (~$10 spent so far;
 the 4 strong parallel runs ~$12 each). All 5 runs confirmed RUNNING. Caching (~50% off cached input)
 ignored, so this slightly over-estimates.
+
+---
+
+## 2026-06-23 — MMLU underperformance root-caused: brittle extraction + bad routing  #mistake #finding #decision
+
+**Diagnostic** (dumped argmax trajectories of the mmlu_pilot coordinator) revealed two compounding bugs:
+1. **Extraction loses correct answers.** A worker derives "degree 2" (correct, =B) but emits no clean
+   letter; `_final_answer` returns that verbose worker output → `extract_choice_letter`→None → reward 0,
+   even though the system found the answer. This penalizes multi-turn answers; the single-model baseline
+   (one clean direct call) extracts fine → unfair 0.55-vs-0.95 gap.
+2. **Coordinator routes to kimi/glm, NOT deepseek** (the MMLU champion). It never learned deepseek is best
+   for MMLU — because bug #1 made the *training* reward noisy (correct answers scored 0), corrupting the
+   signal the optimizer needed to distinguish deepseek > kimi.
+
+**Fix #1 (done):** `score()` now scores the MOST RECENT turn with an *extractable* answer (falling back to
+final_answer), applied equally to all conditions. Re-evaluating to quantify how much of the gap was
+extraction vs routing.
+
+**Implication:** the extraction bug hurt BOTH eval scoring AND training quality. Cleanly fixing it likely
+needs a re-train (so the optimizer sees an honest reward and learns to route to the right specialist).
+Caveat for choice tasks: models often answer with the VALUE ("degree 2") not the LETTER ("B"); fully
+fixing that needs answer-format prompting (task-aware), noted as a follow-up.

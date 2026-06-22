@@ -90,8 +90,44 @@ def score(traj: Trajectory) -> float:
         ValueError: If the task's benchmark is not recognized.
     """
     benchmark = (traj.task.benchmark or "").strip().lower()
-    candidate = traj.final_answer or ""
-    return score_text(benchmark, candidate, traj.task.answer)
+    ref = traj.task.answer
+    candidate = _committed_answer(benchmark, traj)
+    return score_text(benchmark, candidate, ref)
+
+
+def _committed_answer(benchmark: str, traj: Trajectory) -> str:
+    """Pick the text to score from a multi-turn trajectory.
+
+    ``_final_answer`` (last Worker output) is often a verbose derivation with no
+    cleanly-extractable answer, while an answer DID appear in some turn. To avoid
+    throwing away answers the system actually produced, score the MOST RECENT turn
+    whose output yields an extractable answer for this task type; fall back to
+    ``final_answer``. This applies equally to TRINITY and the random baseline (the
+    single-model baseline is one turn, so it is unaffected) — a fair fix, not a thumb
+    on the scale. See JOURNAL 2026-06-23 (MMLU extraction diagnosis).
+    """
+    key = (benchmark or "").strip().lower()
+    final = traj.final_answer or ""
+    turns = getattr(traj, "turns", None) or []
+
+    def has_answer(txt: str) -> bool:
+        if not txt:
+            return False
+        if key in CHOICE_BENCHMARKS:
+            return extract_choice_letter(txt) is not None
+        if key in MATH_BENCHMARKS:
+            return extract_boxed(txt) is not None or extract_last_number(txt) is not None
+        if key in CODE_BENCHMARKS:
+            return "```" in txt or "def " in txt or "import " in txt
+        return False
+
+    if has_answer(final):
+        return final
+    for tr in reversed(turns):
+        txt = getattr(tr, "processed_output", "") or ""
+        if has_answer(txt):
+            return txt
+    return final
 
 
 def score_text(benchmark: str, candidate: str, reference: object) -> float:
