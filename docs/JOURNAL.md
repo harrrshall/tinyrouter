@@ -18,6 +18,37 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-22 — GPU env up; full smoke ladder S1-S8 PASS; pilot training launched  #repro #finding #gotcha
+
+**Context:** Provisioned the H200 box and ran the GPU/network smoke rungs, then launched training.
+
+**Env:** `uv` venv on the box, **torch 2.12.1+cu130**, transformers 5.12.1, numpy 2.5.0, cma. With
+`CUDA_VISIBLE_DEVICES=5`, `torch.cuda.device_count()==1` (correctly pinned to our H200).
+
+**Smoke ladder (GPU/net rungs) — ALL PASS on GPU 5:**
+- **S1**: Qwen3-0.6B loads, `hidden_size=1024`, `layers=28`, encode deterministic, `‖h‖=1.0000`.
+- **S2**: SVF `num_scales=7168` — **exactly the predicted 7×1024, confirmed on the real
+  checkpoint** (resolves the paper's 9,216 discrepancy for our model). Identity round-trips
+  (`max|Δ|=1.2e-3` bf16), perturb changes weights, `reset()` exact.
+- **S6**: all 3 Fireworks models answer live with `reasoning_effort=minimal`.
+- **S8**: end-to-end fitness produced within the call budget.
+
+**#gotcha — detached launch quoting.** First `nohup`/`setsid` launches failed silently (log file
+never created) due to nested single/double-quote + `\$HOME` escaping across the ssh boundary, plus
+SIGHUP timing. **Fix:** run training via a local-background `ssh ... | tee` (key fed on stdin →
+remote env, never in argv/disk); foreground sanity run first confirmed the loop works
+(`gen0 best=0.500`, n=13312, 85s for pop3×m2).
+
+**#finding — uniform-policy argmax degenerates to THINKER.** With `W=0`, argmax over uniform role
+logits always picks role index 0 = THINKER (ROLE_ORDER[0]), so a never-trained coordinator under
+argmax produces no Worker answer → reward 0. Training uses `sample=True` so it explores; this is
+expected, not a bug. Eval uses argmax (post-training, when W is non-trivial).
+
+**Pilot config (running):** math500, λ=8, m_cma=6, T=8, max_items=64, max_turns=3, max_tokens=1024
+→ budget ≈ 384 atomic evals. Watching whether `J` rises before committing to a full-budget run.
+
+---
+
 ## 2026-06-22 — Core implemented; CPU smoke rungs green; review bugs fixed  #repro #mistake #finding
 
 **Context:** Implemented all modules (coordinator, roles, orchestration, sep-CMA-ES, train/eval)
