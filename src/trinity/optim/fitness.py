@@ -72,10 +72,16 @@ async def evaluate_population(
     minibatch_fn,
     *,
     sample: bool = True,
+    on_candidate=None,
     **run_kwargs,
 ) -> list[float]:
     """Evaluate λ candidates sequentially (GPU constraint). `minibatch_fn(i)->tasks`
-    yields the per-candidate minibatch (re-sampled each iteration for an unbiased J)."""
+    yields the per-candidate minibatch (re-sampled each iteration for an unbiased J).
+
+    `on_candidate(i, fit, elapsed_s)` is called after each candidate for progress logging.
+    """
+    import time
+
     fits: list[float] = []
     client = None
     try:
@@ -86,11 +92,14 @@ async def evaluate_population(
         client = None
     try:
         for i, theta in enumerate(thetas):
+            t0 = time.time()
             mb = minibatch_fn(i)
             fit, _ = await evaluate_candidate(
                 theta, spec, policy, pool, pool_models, mb, sample=sample, client=client, **run_kwargs
             )
             fits.append(fit)
+            if on_candidate is not None:
+                on_candidate(i, fit, time.time() - t0)
     finally:
         if client is not None:
             await client.aclose()

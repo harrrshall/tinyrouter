@@ -102,8 +102,13 @@ async def train(args) -> dict:
         def minibatch_fn(i, _rng=gen_rng):
             return sample_minibatch(tasks, m_cma, _rng)
 
+        def _on_cand(i, fit, elapsed, _g=gen):
+            print(f"    [gen {_g} cand {i + 1}/{len(thetas)}] fit={fit:.3f} ({elapsed:.0f}s)",
+                  flush=True)
+
         fits = await evaluate_population(
-            thetas, spec, policy, pool, pool_models, minibatch_fn, sample=True, **run_kwargs
+            thetas, spec, policy, pool, pool_models, minibatch_fn,
+            sample=True, on_candidate=_on_cand, **run_kwargs
         )
         es.tell(thetas, fits)
 
