@@ -87,10 +87,17 @@ async def evaluate(args) -> dict:
 
     # --- single-model baselines (R1/R2) ---
     for m in pool_models:
-        s = await _score_single_model(tasks, pool, m, args.benchmark,
-                                      max_tokens=args.max_tokens, reasoning=args.reasoning)
+        reps = [await _score_single_model(tasks, pool, m, args.benchmark,
+                                          max_tokens=args.max_tokens, reasoning=args.reasoning)
+                for _ in range(max(1, args.single_reps))]
+        s = float(mean(reps))
         results[f"single::{m}"] = s
-        print(f"  single  {m:20s} = {s:.4f}")
+        if len(reps) > 1:
+            sd = (sum((x - s) ** 2 for x in reps) / len(reps)) ** 0.5
+            results[f"single_std::{m}"] = sd
+            print(f"  single  {m:20s} = {s:.4f} ± {sd:.4f}  (reps={reps})")
+        else:
+            print(f"  single  {m:20s} = {s:.4f}")
 
     # --- TRINITY trained coordinator (argmax) ---
     cfg = yaml.safe_load(Path(args.config).read_text())["coordinator"]
@@ -135,6 +142,8 @@ def main() -> None:
     ap.add_argument("--config", default=str(_REPO / "configs" / "trinity.yaml"))
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
     ap.add_argument("--max-items", type=int, default=100, dest="max_items")
+    ap.add_argument("--single-reps", type=int, default=1, dest="single_reps",
+                    help="average each single-model baseline over K runs (cuts nondeterminism noise)")
     ap.add_argument("--max-turns", type=int, default=5, dest="max_turns")
     ap.add_argument("--max-tokens", type=int, default=4096, dest="max_tokens")
     ap.add_argument("--reasoning", default="minimal")
