@@ -389,3 +389,22 @@ extraction vs routing.
 needs a re-train (so the optimizer sees an honest reward and learns to route to the right specialist).
 Caveat for choice tasks: models often answer with the VALUE ("degree 2") not the LETTER ("B"); fully
 fixing that needs answer-format prompting (task-aware), noted as a follow-up.
+
+---
+
+## 2026-06-23 — Extraction fix → MMLU TRINITY 0.55→0.95 (ties best single); multi-task R1/R2 holds  #repro #finding
+
+**mmlu_s1 re-eval with fixed extraction (40 held-out items):**
+deepseek 0.975 | glm 0.750 | kimi 0.600 | random 0.850 | **TRINITY 0.950**.
+TRINITY jumped 0.55→**0.95**, now a statistical tie with the best single model (deepseek 0.975) — the
+0.40 gap was almost entirely the extraction bug, confirming the diagnosis. R4 holds (0.95>0.85).
+
+**Multi-task headline (the paper's core claim) — reproduced on our open-source pool:**
+- best FIXED single model avg ≈ **0.65** (deepseek 0.33/0.975; glm 0.55/0.75).
+- per-task TRINITY avg ≈ **0.75** (math 0.55, mmlu 0.95) → **TRINITY > any single fixed model on the
+  multi-task average.** No single model wins both tasks; routing to the per-task specialist does.
+- Per-task, TRINITY ties the best specialist (math≈glm, mmlu≈deepseek) and beats random on both — the
+  expected single-task ceiling for routing.
+
+**Status:** strong math coordinators at 13/14; re-evaluating math with the fixed extraction to finalize
+the table. Exact ledger cost so far ~$1.3 (evals); total spend ~$13.
