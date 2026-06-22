@@ -96,11 +96,16 @@ async def train(args) -> dict:
         t0 = time.time()
         thetas = es.ask()
 
-        # Re-sample a fresh minibatch per candidate per generation (unbiased J).
+        # Common random numbers: ALL candidates in a generation are scored on the
+        # SAME minibatch (re-sampled across generations). This removes task-luck from
+        # intra-generation ranking — the variance-reduction the noisy binary reward
+        # needs for sep-CMA-ES to rank candidates by policy quality, not by which
+        # tasks they happened to draw. (Pilot without this showed a flat/bouncing J.)
         gen_rng = random.Random(args.seed * 100000 + gen)
+        gen_minibatch = sample_minibatch(tasks, m_cma, gen_rng)
 
-        def minibatch_fn(i, _rng=gen_rng):
-            return sample_minibatch(tasks, m_cma, _rng)
+        def minibatch_fn(i, _mb=gen_minibatch):
+            return _mb
 
         def _on_cand(i, fit, elapsed, _g=gen):
             print(f"    [gen {_g} cand {i + 1}/{len(thetas)}] fit={fit:.3f} ({elapsed:.0f}s)",
