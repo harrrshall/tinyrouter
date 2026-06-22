@@ -123,6 +123,7 @@ async def evaluate(args) -> dict:
     print("[eval] invariants:", json.dumps(invariants, indent=2))
 
     if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text(json.dumps(out, indent=2))
     return out
 

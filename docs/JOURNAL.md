@@ -18,6 +18,36 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-23 — MMLU eval: models SPLIT across tasks → routing headroom confirmed  #repro #finding #decision
+
+**Eval (40 held-out MMLU items; math-trained θ used → TRINITY here is zero-shot transfer):**
+
+| condition | math500 | MMLU |
+|---|---|---|
+| deepseek-v4-pro | 0.325 | **0.975** ← best on MMLU |
+| glm-5p2 | **0.550** ← best on math | 0.725 |
+| kimi-k2p6 | 0.275 | 0.600 |
+| random routing | 0.350 | 0.675 |
+| TRINITY | 0.550 (trained) | 0.850 (zero-shot transfer) |
+
+**Headline finding (#finding):** the pool **splits** — glm-5p2 is the math specialist, deepseek-v4-pro
+the knowledge specialist. **No single model wins both.** This is precisely the regime where the paper's
+claim lives: a per-task router that picks the right specialist beats any *fixed* single model on the
+average. Quick arithmetic with best-per-task routing:
+- best fixed single model avg: deepseek (0.325+0.975)/2 = **0.65**; glm (0.55+0.725)/2 = 0.6375.
+- per-task-trained TRINITY ≈ per-task best (math→0.55, mmlu→~0.97) → avg ≈ **0.76** > 0.65. R1/R2 holds
+  **on the multi-task average** (to be made concrete by training an MMLU coordinator).
+- Zero-shot transfer bonus: math-trained θ on MMLU still beat random (0.85 vs 0.675) ✅ R4 again, though
+  below deepseek (it was trained to favor glm, the wrong pick for MMLU) — sensible.
+
+**#mistake (minor):** `eval.py --out` crashed writing `experiments/mmlu/...` because the parent dir
+didn't exist (results were already printed, so no data lost). Fixed with `parent.mkdir(parents=True)`.
+
+**Decision:** train an MMLU-specific coordinator (paper protocol = one coordinator per task) so we have
+a real per-task TRINITY on MMLU, then report the concrete multi-task average vs best single model.
+
+---
+
 ## 2026-06-23 — Held-out eval: R4 holds, R1/R2 ties on single task → need multi-task  #repro #finding #decision
 
 **Eval (40 held-out math500 items, trained `full_pilot` θ):**
