@@ -124,7 +124,7 @@ class FireworksPool:
         @retry(
             retry=retry_if_exception_type(_Retryable),
             stop=stop_after_attempt(self.max_retries),
-            wait=wait_exponential(multiplier=1, min=1, max=30),
+            wait=wait_exponential(multiplier=1, min=1, max=60),
             reraise=True,
         )
         async def _do(cli: httpx.AsyncClient) -> ChatResult:

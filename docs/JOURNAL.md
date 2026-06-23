@@ -18,6 +18,77 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-23 — RIGOROUS final eval (n=120, baselines ×3 reps): math null, MMLU win, thin multi-task win  #repro #finding
+
+**Context:** the n=40 per-coordinator numbers were too noisy (same baseline swung 0.45–0.79 across runs).
+Ran the definitive eval: n=120 held-out items, each single-model baseline averaged over 3 reps to kill
+reasoning-model nondeterminism. Raw: `experiments/final/{math_rigorous,mmlu_rigorous}.json`.
+
+**Result:**
+
+| system | math500 | MMLU | **avg** |
+|---|---|---|---|
+| **TRINITY** | 0.792 | **0.925** | **0.858** |
+| deepseek-v4-pro | 0.747 ± 0.014 | 0.922 ± 0.010 | 0.835 |
+| random routing | 0.792 | 0.875 | 0.833 |
+| glm-5p2 | **0.794** ± 0.017 | 0.783 ± 0.007 | 0.789 |
+| kimi-k2p6 | 0.742 ± 0.018 | 0.539 ± 0.004 | 0.640 |
+
+**Findings (honest):**
+- **Multi-task avg: R1/R2 ✅ and R4 ✅, but THIN.** TRINITY 0.858 > best fixed single 0.835 (deepseek)
+  > random 0.833. Margins ~0.02.
+- **math500: routing gives NO benefit.** TRINITY 0.792 = random 0.792 *exactly*, and ties best single
+  (glm 0.794, inside noise). R1/R2 ❌, R4 ❌ for math as a standalone task. Root cause: all three models
+  cluster at ~0.74–0.79, so there is no complementarity to exploit — any routing (incl. random) lands at
+  ~0.79. This is the SAME thin-complementarity pattern an independent sibling project (project_harness)
+  measured on math/proofs (see entry below).
+- **MMLU: routing helps.** TRINITY 0.925 > random 0.875 (R4 ✅), edges best single (deepseek 0.922).
+  Models are spread (0.54–0.92) → real headroom, captured.
+- **The win is CROSS-task, not within-task.** No single model is good at both (deepseek=knowledge,
+  glm=math); TRINITY picks the right specialist per benchmark, so its *average* beats any fixed model.
+  Within a benchmark of similar models it only matches random.
+
+**Correction to earlier claims (#mistake):** the n=40 math story (TRINITY 0.55 > glm 0.50) that read as a
+routing win was small-sample noise; at n=120 it is a tie. RESULTS.md §3 marks the n=40 table superseded.
+
+**Cost (final):** $20.89 exact (deepseek $6.56, glm $6.70, kimi $7.64), well under the ~$65 projection.
+
+**Follow-up:** routing value lives where models genuinely differ. Next levers documented in the entry
+below (project_harness) and the classifier-improvement research note.
+
+---
+
+## 2026-06-23 — Assessed sibling repo `project_harness` for reuse (12-agent workflow, every claim verified)  #finding #decision
+
+**Context:** user pointed at `~/Desktop/2026/experiments/project_harness` (a sibling multi-LLM
+orchestration project on IMO-ProofBench + SWE-bench Pro) and asked, honestly, whether its data is usable
+for TRINITY. Ran a survey→assess→adversarial-verify workflow; all key claims re-checked against files.
+
+**Findings:**
+- **Direct data reuse: NO.** Two independent blockers (verified): (1) **model mismatch** — locally-graded
+  generator labels cover kimi-k2p6 + glm-5**p1** + gpt-oss-120b; deepseek-v4-pro has zero generator
+  grades (it sits on the grading jury), and glm is 5p1 not our 5p2; (2) **domain mismatch** — everything
+  is IMO proofs (0–7 LLM-jury) or SWE-bench coding (binary Docker), with **no math500 and no MMLU
+  anywhere**.
+- **Independent corroboration (valuable):** project_harness measured the SAME thin complementarity on
+  math/proofs that we just saw — oracle-union 8/30 vs best-single 7/30 (+1, inside jury MAE), and "no
+  live selector beat best-single." Matches our math null result exactly.
+- **Real complementarity exists on CODING:** their SWE-bench arena (kimi/deepseek/glm) shows oracle 0.600
+  vs best-single 0.480 (+12pt); 6/15 solvable instances solved by exactly one model. Coding is where
+  routing would actually pay off.
+- **Groundwork is on OUR box:** `/mnt/data/harshal/evo_study/` (same machine) has a frozen 25-instance
+  3-model candidate pool (incl. glm-5p2 capture) + gold pass/fail labels + Docker + the SWE-bench eval
+  harness. The expensive part (generate + grade candidates) is already done.
+
+**Decision:** a separate coding/SWE-bench TRINITY run was scoped (offline "selection arena": train the
+coordinator to route over the frozen, gold-labelled pool for ~$0). **User chose to abandon it** for now
+and keep the math/MMLU result clean. Reusable take-aways imported as a prior: routing helps only where
+models genuinely differ; report 1-instance margins as noise; value may live in the Verifier role.
+
+**Follow-up:** if we revisit, the offline arena is the cheapest high-value experiment available.
+
+---
+
 ## 2026-06-23 — MMLU eval: models SPLIT across tasks → routing headroom confirmed  #repro #finding #decision
 
 **Eval (40 held-out MMLU items; math-trained θ used → TRINITY here is zero-shot transfer):**

@@ -6,8 +6,8 @@ fireworks:
   base_url: "https://api.fireworks.ai/inference/v1"
   api_key_env: "FIREWORKS_API_KEY"   # value read from env; NEVER hardcode here
   timeout_s: 180                      # reasoning models can be slow; retry on timeout
-  max_retries: 6
-  max_concurrency: 8                  # parallel in-flight requests across the pool
+  max_retries: 10                     # ride through sustained 429 windows (heavy multi-rep evals)
+  max_concurrency: 8                  # parallel in-flight requests; 429s absorbed by the retry headroom above
 
 pool:
   - name: deepseek-v4-pro

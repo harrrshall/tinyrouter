@@ -3,82 +3,123 @@
 > Structured scorecard for the open-source replication of **TRINITY: An Evolved LLM Coordinator**
 > (Xu et al., ICLR 2026) using `deepseek-v4-pro`, `glm-5p2`, `kimi-k2p6` via Fireworks.
 >
-> The per-coordinator and multi-task tables below are **auto-generated** by
-> `scripts/results_table.py` from `experiments/**/eval*.json` (machine-readable copy:
-> `experiments/results.json`). Method: [`AGENTS.md`](AGENTS.md) · spec: [`SPEC.md`](SPEC.md) ·
-> full lab log incl. every mistake/fix: [`JOURNAL.md`](JOURNAL.md).
+> The definitive numbers are the **rigorous n=120 evals** in §1–§2 (raw data:
+> `experiments/final/math_rigorous.json`, `experiments/final/mmlu_rigorous.json`). The earlier n=40
+> per-coordinator runs (§3) are kept for history but are **superseded** — they were too noisy to trust.
+> Method: [`AGENTS.md`](../AGENTS.md) · spec: [`SPEC.md`](SPEC.md) · full lab log incl. every
+> mistake/fix: [`JOURNAL.md`](JOURNAL.md).
 
-## 1. Headline
+## 0. TL;DR (honest)
 
-On our 3-model open-source pool, **TRINITY reproduces the paper's core relative claims**, with
-honest caveats on variance:
+On our 3-model open-source pool, the paper's core claim **reproduces on the multi-task average, but
+thinly, and the win is cross-task rather than within-task.**
 
-- **R1/R2 ✅** — on the multi-task average, the trained coordinator (**0.750**) beats *every* single
-  fixed model (best is deepseek-v4-pro at **0.639**). No single model wins both tasks; the router
-  picks the right specialist per task.
-- **R4 ✅** — TRINITY (0.750) beats random routing (0.558) on the average, and on 6 of 7 individual
-  evals.
-- **Per task:** TRINITY ties the best specialist (math≈glm-5p2, MMLU≈deepseek-v4-pro) — the expected
-  single-task ceiling for routing.
+- **Multi-task average — R1/R2 ✅, R4 ✅ (thin):** TRINITY **0.858** beats every fixed single model
+  (best is deepseek at **0.835**) and random routing (**0.833**). Margin ~0.02.
+- **Per-task MMLU — routing helps:** TRINITY **0.925** clearly beats random (**0.875**) and edges the
+  best single model (deepseek 0.922).
+- **Per-task math — routing does NOT help:** all three models cluster at ~0.79, so there is no headroom.
+  TRINITY (**0.792**) ties the best single model (glm **0.794**) and ties random routing (**0.792**)
+  *exactly*. Both invariants are **false** for math as a standalone task.
 
-## 2. Per-coordinator held-out evals (40 items each, fixed extraction)
+The mechanism: no single fixed model is good at both tasks (deepseek = knowledge specialist, glm = math
+specialist). TRINITY picks the right specialist per task, so its **average** beats any fixed choice. But
+**within** a benchmark where the models are equally good, a learned router has nothing to exploit and
+matches random. Routing helps across *heterogeneous* tasks, not among *similar* models.
 
-| benchmark | coordinator | TRINITY | best single (model) | random | T>best? | T>rand? |
-|---|---|---|---|---|---|---|
-| math500 | full_pilot | 0.550 | 0.500 (glm-5p2) | 0.325 | ✅ | ✅ |
-| math500 | math_s1 | 0.525 | 0.450 (glm-5p2) | 0.400 | ✅ | ✅ |
-| math500 | math_s0 | 0.325 | 0.700 (glm-5p2) | 0.425 | ❌ | ❌ |
-| mmlu | mmlu_s1 | 0.950 | 0.975 (deepseek) | 0.850 | ≈ | ✅ |
-| mmlu | mmlu_s0 | 0.925 | 0.950 (deepseek) | 0.875 | ≈ | ✅ |
-| mmlu | mmlu_pilot* | 0.550 | 0.950 (deepseek) | 0.500 | ❌ | ✅ |
-
-`*` mmlu_pilot was scored before the extraction fix; superseded by mmlu_s0/s1.
-
-## 3. Multi-task summary (the paper's R1/R2)
+## 1. Rigorous multi-task summary (the paper's R1/R2/R4) — n=120, baselines averaged ×3 reps
 
 | system | math500 | MMLU | **average** |
 |---|---|---|---|
-| **TRINITY (best coordinator/task)** | **0.55** | **0.95** | **0.750** |
-| deepseek-v4-pro (fixed) | 0.33 | 0.975 | 0.639 |
-| glm-5p2 (fixed) | 0.50 | 0.75 | 0.625 |
-| kimi-k2p6 (fixed) | 0.25 | 0.60 | 0.401 |
-| random routing | 0.33 | 0.85 | 0.558 |
+| **TRINITY** | 0.792 | **0.925** | **0.858** |
+| deepseek-v4-pro (fixed) | 0.747 | 0.922 | 0.835 |
+| random routing | 0.792 | 0.875 | 0.833 |
+| glm-5p2 (fixed) | **0.794** | 0.783 | 0.789 |
+| kimi-k2p6 (fixed) | 0.742 | 0.539 | 0.640 |
 
-**R1/R2 ✅ HOLDS** (0.750 > 0.639) · **R4 ✅ HOLDS** (0.750 > 0.558).
+- **R1/R2 ✅ HOLDS (thin):** TRINITY avg 0.858 > best fixed single avg 0.835 (deepseek). Margin +0.024.
+- **R4 ✅ HOLDS (thin):** TRINITY avg 0.858 > random avg 0.833. Margin +0.025.
+
+## 2. Rigorous per-benchmark detail (n=120; single-model baselines = mean ± std over 3 reps)
+
+### math500 — routing gives no benefit (models too similar)
+
+| system | score | note |
+|---|---|---|
+| glm-5p2 | 0.794 ± 0.017 | best single |
+| **TRINITY** | **0.792** | ties best single & random |
+| deepseek-v4-pro | 0.747 ± 0.014 | |
+| kimi-k2p6 | 0.742 ± 0.018 | |
+| random routing | 0.792 | identical to TRINITY |
+
+R1/R2 ❌ (0.792 vs 0.794, inside noise) · R4 ❌ (0.792 = 0.792, exact tie). All three models within
+~0.05 of each other ⇒ no complementarity to route around.
+
+### MMLU — routing helps
+
+| system | score | note |
+|---|---|---|
+| **TRINITY** | **0.925** | beats random, edges best single |
+| deepseek-v4-pro | 0.922 ± 0.010 | best single |
+| random routing | 0.875 | |
+| glm-5p2 | 0.783 ± 0.007 | |
+| kimi-k2p6 | 0.539 ± 0.004 | |
+
+R1/R2 ≈ (0.925 vs 0.922, edge within noise) · R4 ✅ (0.925 > 0.875). Models are spread (0.54–0.92) ⇒
+real routing headroom, and TRINITY captures it.
+
+## 3. Earlier n=40 per-coordinator evals (SUPERSEDED — kept for history)
+
+These point estimates were unreliable: reasoning models are not fully deterministic, so the *same*
+baseline swung 0.45–0.79 across runs at n=40. The n=120 rigorous numbers above replace them. Notably,
+the n=40 math story (TRINITY 0.55 > glm 0.50) looked like a routing win but was **small-sample noise** —
+at n=120 it is a tie.
+
+| benchmark | coordinator | TRINITY | best single (model) | random |
+|---|---|---|---|---|
+| math500 | full_pilot | 0.550 | 0.500 (glm-5p2) | 0.325 |
+| math500 | math_s1 | 0.525 | 0.450 (glm-5p2) | 0.400 |
+| math500 | math_s0 | 0.325 | 0.700 (glm-5p2) | 0.425 |
+| mmlu | mmlu_s1 | 0.950 | 0.975 (deepseek) | 0.850 |
+| mmlu | mmlu_s0 | 0.925 | 0.950 (deepseek) | 0.875 |
 
 ## 4. Honest caveats (do not over-read)
 
-1. **Seed variance.** Math coordinators are inconsistent: 2 of 3 beat the best single model
-   (full_pilot 0.55, math_s1 0.525), but **math_s0 failed (0.325, below random)**. sep-CMA-ES with a
-   noisy binary reward + small `m_cma` occasionally converges to a bad policy. MMLU is robust across
-   seeds (0.925–0.95).
-2. **Eval noise at n=40.** Reasoning models are not fully deterministic even at temperature 0, so the
-   *same* "best single" baseline scored 0.45–0.70 across runs on the same math questions. Point
-   estimates are shaky at n=40.
-3. **The earlier MMLU "failure" (0.55) was a bug, not a finding** — brittle answer-extraction
-   discarded correct multi-turn answers (and corrupted the training reward). Fixed; MMLU TRINITY
-   moved 0.55 → 0.95. See JOURNAL 2026-06-23.
-4. **Rigorous eval in progress:** n=120 with single-model baselines averaged over 3 reps, on the best
-   math + MMLU coordinators — this section will be updated with mean±std once it lands.
+1. **The multi-task win is thin (~0.02) and cross-task.** It comes from picking the right specialist per
+   benchmark, not from beating any model on its own turf. Per-task, TRINITY only clearly wins on MMLU.
+2. **Math shows no routing benefit at all.** With all three models at ~0.79, TRINITY = best single =
+   random. This is a genuine null result, reported as-is, not hidden.
+3. **Per-task margins are inside the noise.** TRINITY vs best-single is +0.003 (MMLU) and −0.003 (math) —
+   both well inside the ±0.01–0.02 std bars. The honest reading is "ties the specialist per task."
+4. **Seed variance in training.** sep-CMA-ES with a noisy binary reward occasionally converged to a bad
+   math policy (an earlier seed, math_s0, scored 0.325). MMLU coordinators were robust (0.925–0.95).
+5. **The earlier MMLU "failure" (0.55) was a bug, not a finding** — brittle answer-extraction discarded
+   correct multi-turn answers. Fixed; MMLU TRINITY moved 0.55 → 0.925. See JOURNAL 2026-06-23.
 
 ## 5. What was NOT reproduced / scoped out
 
-- LiveCodeBench (gated loader → toy fallback) and GPQA (gated dataset) were not run on real data, so
-  the 4-task suite and the 86.2% LiveCodeBench record are out of scope here.
+- LiveCodeBench (gated loader) and GPQA (gated dataset) were not run on real data, so the paper's 4-task
+  suite and the 86.2% LiveCodeBench record are out of scope here.
 - Absolute numbers differ from the paper by design (different model pool). We target the **relative**
   invariants (R1/R2/R4), per `SPEC.md` §1.3.
+- A separate coding/SWE-bench TRINITY run was scoped and the groundwork located (a sibling project's
+  frozen, gold-labelled 3-model candidate pool — where complementarity is real, +12pt oracle over
+  best-single) but not executed. See JOURNAL 2026-06-23 (project_harness assessment).
 
 ## 6. Reproduce
 
 ```bash
 source ~/.config/trinity/secrets.env
 bash scripts/run_remote.sh train --benchmark math500   # evolve a coordinator on GPU
-bash scripts/run_remote.sh eval  --benchmark math500 --theta <best_theta.npy>
-python scripts/results_table.py --json                 # regenerate this scorecard
+# rigorous eval: n=120, single baselines averaged over 3 reps
+CUDA_VISIBLE_DEVICES=5 python -m trinity.eval --benchmark math500 \
+    --theta experiments/math500/full_pilot/best_theta.npy \
+    --max-items 120 --single-reps 3 --out experiments/final/math_rigorous.json
 python scripts/cost_report.py --ledger cost_ledger.jsonl   # spend
 ```
 
 ## 7. Cost
 
-~$22 spent at the time of writing (Fireworks token usage; see `scripts/cost_report.py`). Real rates:
-deepseek-v4-pro $1.74/$3.48, glm-5p2 ~$1.40/$4.40, kimi-k2p6 $0.95/$4.00 per 1M in/out.
+**$20.89** total (exact, from the token ledger at real Fireworks prices): deepseek $6.56, glm $6.70,
+kimi $7.64. Well under the ~$65 projected. Rates: deepseek-v4-pro $1.74/$3.48, glm-5p2 ~$1.40/$4.40,
+kimi-k2p6 $0.95/$4.00 per 1M in/out.
