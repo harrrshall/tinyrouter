@@ -575,12 +575,15 @@ async def _collect(args) -> int:
 
     out_dir = _REPO / "experiments" / "final"
     out_dir.mkdir(parents=True, exist_ok=True)
-    raw_path = out_dir / f"oracle_raw_{args.benchmark}.jsonl"
-    matrix_path = out_dir / f"oracle_matrix_{args.benchmark}.json"
+    # Suffix non-test splits so a train-split collection (for the warm-start labels)
+    # never clobbers the test-split diagnostic matrix.
+    suffix = "" if args.split == "test" else f"_{args.split}"
+    raw_path = out_dir / f"oracle_raw_{args.benchmark}{suffix}.jsonl"
+    matrix_path = out_dir / f"oracle_matrix_{args.benchmark}{suffix}.json"
 
     pool = FireworksPool(args.models)
     models = list(pool.models)
-    tasks = load_tasks(args.benchmark, "test", max_items=args.max_items, seed=args.seed)
+    tasks = load_tasks(args.benchmark, args.split, max_items=args.max_items, seed=args.seed)
     print(f"[collect] benchmark={args.benchmark} level={args.level} K={args.k} "
           f"tasks={len(tasks)} models={models} -> {len(tasks)*len(models)*args.k} calls")
 
@@ -652,7 +655,7 @@ async def _collect(args) -> int:
     # Assemble the compact matrix (plan §7.1 schema).
     matrix = {
         "benchmark": args.benchmark, "k": args.k, "level": args.level,
-        "seed": args.seed, "aborted": aborted["flag"],
+        "split": args.split, "seed": args.seed, "aborted": aborted["flag"],
         "tasks": [
             {"id": t.task_id, "answer": t.answer,
              "per_model": {m: cells[(t.task_id, m)] for m in models}}
@@ -808,6 +811,8 @@ def main() -> None:
 
     # collect args
     ap.add_argument("--benchmark", default="math500")
+    ap.add_argument("--split", default="test",
+                    help="dataset split to collect labels on (use 'train' for warm-start labels)")
     ap.add_argument("--models", default=str(_REPO / "configs" / "models.yaml"))
     ap.add_argument("--k", type=int, default=5, help="samples per (query, model)")
     ap.add_argument("--level", default="L0", choices=["L0"],
