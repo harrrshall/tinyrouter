@@ -156,6 +156,33 @@ deepseek dominates (0.94 vs glm 0.79, kimi 0.52) and TRINITY already ≈ best-si
 so the router already captures what little is there. A definitive MMLU cross-fit needs a K≥5 re-collect
 (attempted but abandoned after a Fireworks latency spike dropped throughput to ~4 calls/min).
 
-**Bottom line:** on this pool, **math is the place router improvements can pay off** (real headroom our
-router misses); MMLU is near-ceiling. Net next step from the diagnostic: pursue the warm-start + shaped-
+**Net:** on this pool, **math is the place router improvements can pay off** (real headroom our
+router misses); MMLU is near-ceiling. Next step from the diagnostic: pursue the warm-start + shaped-
 fitness upgrades and validate against the math oracle ceiling (0.856).
+
+## 9. Warm-start + shaped-fitness retrain on math (IMPROVEMENTS.md #2 + #3)
+
+Acting on §8: warm-started the head with a supervised numpy fit of the agent rows against the train-split
+oracle matrix (`oracle_matrix_math500_train.json`, K=3, n=200), packed it as the sep-CMA-ES initial mean,
+and retrained with shaped training fitness (format bonus + turn penalty + variance reweight; the **eval
+stays pure binary**). Config: popsize 8, m_cma 8, gen 12, seed 0. Held-out eval on the same n=120 test
+split used for the oracle ceiling. Spend: $27.22 total (this retrain + the train-split label collection).
+
+| | score |
+|---|---|
+| **TRINITY (warm-start + shaped)** | **0.808** |
+| best single (glm-5p2) | 0.817 |
+| deepseek-v4-pro | 0.783 |
+| kimi-k2p6 | 0.725 |
+| random routing | 0.733 |
+| *prior router (§1, same test)* | *0.792* |
+
+**Read it as inconclusive, not a win.** The new router scores 0.808 vs the prior router's 0.792 (+1.6pt),
+but this is a single new-vs-old point comparison and it sits inside the eval noise. The tell: random
+routing scored **0.733 here but 0.792 in the §1 rigorous eval** — same baseline, ~6pt swing — because eval
+draws one sample per query (`--single-reps 1`). With the baseline itself moving that much, a +1.6pt router
+delta carries no signal. We did **not** run the control (zero-init + pure-binary at the same config) that
+would isolate the intervention from CMA-ES seed luck, so **no causal claim**: we cannot say warm-start or
+shaping caused the change. The result is still **below best-single (0.817)** and **below the oracle ceiling
+(0.856)** — the ~4.9pt of achievable headroom from §8 remains uncaptured. The interventions are
+implemented and tested (54 offline tests pass); whether they move the held-out number is unproven.

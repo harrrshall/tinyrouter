@@ -18,6 +18,28 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-24 — Warm-start + shaped-fitness retrain on math: inconclusive (within noise)  #finding #decision
+
+**Context:** ran the end-to-end #2+#3 pipeline on the box (`scratchpad/run_warm_shaped.sh`): collect
+train-split oracle labels (K=3, n=200) → encode on GPU → numpy fit of the agent head → pack as CMA-ES x0
+→ retrain (popsize 8, m_cma 8, gen 12, seed 0) with shaped training fitness → held-out eval on the n=120
+test split (same set as the 0.856 oracle ceiling).
+**Expected:** if warm-start + shaping helped, the new router beats the prior 0.792 and closes some of the
++4.9pt headroom toward 0.856.
+**Actual:** TRINITY 0.808 vs prior 0.792 (+1.6pt). Best single (glm) 0.817, random 0.733. Training best
+shaped-fitness 1.0145 at gen 11 (full 12 gens). Spend $27.22 total.
+**Root cause / read:** the +1.6pt is inside eval noise. Random routing scored 0.733 here vs 0.792 in the
+§1 rigorous eval — same baseline, ~6pt swing — because eval uses `--single-reps 1` (one sample/query).
+A moving baseline of that size swamps a 1.6pt router delta.
+**Fix / decision:** documented as RESULTS §9 with **no causal claim**. The clean control (zero-init +
+pure-binary at the same config) was offered and the user chose to skip it (~$11 to settle borderline
+noise), so we do not attribute the change to warm-start or shaping. Result still below best-single (0.817)
+and the oracle ceiling (0.856); the achievable headroom from §8 remains uncaptured.
+**Follow-up:** if revisited, run the control + raise eval `--single-reps` to ≥3 to shrink the baseline
+noise band before claiming any lift. Interventions remain implemented + tested (54 offline tests pass).
+
+---
+
 ## 2026-06-23 — Oracle-ceiling diagnostic: math is ROUTER_BOUND (overturns the "math null" read)  #finding #repro #mistake
 
 **Context:** built `scripts/oracle_ceiling.py` (recommendation #1, branch `oracle-ceiling-diagnostic`) to

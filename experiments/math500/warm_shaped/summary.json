@@ -1,0 +1,14 @@
+{
+  "benchmark": "math500",
+  "pool": [
+    "deepseek-v4-pro",
+    "glm-5p2",
+    "kimi-k2p6"
+  ],
+  "n_total": 13312,
+  "popsize": 8,
+  "m_cma": 8,
+  "generations": 12,
+  "best_fitness": 1.014512534482326,
+  "run_dir": "/mnt/data/harshal/trinity/experiments/math500/warm_shaped"
+}

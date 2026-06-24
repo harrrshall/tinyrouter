@@ -1,0 +1,15 @@
+{
+  "benchmark": "math500",
+  "results": {
+    "single::deepseek-v4-pro": 0.7833333333333333,
+    "single::glm-5p2": 0.8166666666666667,
+    "single::kimi-k2p6": 0.725,
+    "TRINITY": 0.8083333333333333,
+    "random_routing": 0.7333333333333333
+  },
+  "invariants": {
+    "R1/R2 TRINITY > best single model": false,
+    "R4 TRINITY > random routing": true,
+    "best_single": 0.8166666666666667
+  }
+}

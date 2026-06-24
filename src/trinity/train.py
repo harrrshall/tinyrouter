@@ -61,6 +61,9 @@ async def train(args) -> dict:
     # Training-only fitness shaping (improvement #3). Defaults preserve the
     # original mean-binary fitness exactly. The eval path stays pure binary.
     fitness_cfg = FitnessConfig.from_dict(cfg.get("fitness"))
+    if getattr(args, "enable_reweight", False) and not fitness_cfg.enable_reweight:
+        import dataclasses
+        fitness_cfg = dataclasses.replace(fitness_cfg, enable_reweight=True)
     if fitness_cfg.enable_reweight or fitness_cfg.shaping_active:
         print(f"[train] fitness shaping ACTIVE: {fitness_cfg}")
 
@@ -194,6 +197,8 @@ def main() -> None:
     ap.add_argument("--warmstart-theta", default="", dest="warmstart_theta",
                     help="path to a warm-start theta .npy (scripts/warmstart_head.py); "
                          "used as the sep-CMA-ES initial mean instead of the zero init")
+    ap.add_argument("--enable-reweight", action="store_true", dest="enable_reweight",
+                    help="turn on variance-aware task reweighting (#3) regardless of config")
     args = ap.parse_args()
     # argparse stores 0 for "not set" on the int overrides; normalize to None-ish.
     args.generations = args.generations or None

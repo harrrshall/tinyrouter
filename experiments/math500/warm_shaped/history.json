@@ -1,0 +1,86 @@
+[
+  {
+    "generation": 0,
+    "gen_mean_fitness": 0.6994599829276995,
+    "gen_max_fitness": 0.91689718099866,
+    "best_fitness": 0.91689718099866,
+    "seconds": 697.7
+  },
+  {
+    "generation": 1,
+    "gen_mean_fitness": 0.681972302827571,
+    "gen_max_fitness": 0.7734248989610233,
+    "best_fitness": 0.91689718099866,
+    "seconds": 1321.6
+  },
+  {
+    "generation": 2,
+    "gen_mean_fitness": 0.8111574461011503,
+    "gen_max_fitness": 0.9079049296084524,
+    "best_fitness": 0.91689718099866,
+    "seconds": 1193.2
+  },
+  {
+    "generation": 3,
+    "gen_mean_fitness": 0.7456675267878198,
+    "gen_max_fitness": 1.0108248613013238,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 1788.0
+  },
+  {
+    "generation": 4,
+    "gen_mean_fitness": 0.5956630172846125,
+    "gen_max_fitness": 0.852470536079387,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 1391.9
+  },
+  {
+    "generation": 5,
+    "gen_mean_fitness": 0.7015165676721022,
+    "gen_max_fitness": 0.7808613828731895,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 1264.8
+  },
+  {
+    "generation": 6,
+    "gen_mean_fitness": 0.7036351411258066,
+    "gen_max_fitness": 0.9409772581218562,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 552.7
+  },
+  {
+    "generation": 7,
+    "gen_mean_fitness": 0.8449741289355315,
+    "gen_max_fitness": 1.00784423269371,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 1386.4
+  },
+  {
+    "generation": 8,
+    "gen_mean_fitness": 0.773388752602234,
+    "gen_max_fitness": 0.9228447759022965,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 891.1
+  },
+  {
+    "generation": 9,
+    "gen_mean_fitness": 0.778264749801737,
+    "gen_max_fitness": 0.9276754073965688,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 632.8
+  },
+  {
+    "generation": 10,
+    "gen_mean_fitness": 0.7121655799432364,
+    "gen_max_fitness": 0.9310981154776213,
+    "best_fitness": 1.0108248613013238,
+    "seconds": 972.4
+  },
+  {
+    "generation": 11,
+    "gen_mean_fitness": 0.7857575474287801,
+    "gen_max_fitness": 1.014512534482326,
+    "best_fitness": 1.014512534482326,
+    "seconds": 773.4
+  }
+]
