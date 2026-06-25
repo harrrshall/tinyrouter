@@ -18,6 +18,44 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-25 — Constrained decoding fixes parse_rate (1.0), but GRPO has a dead gradient (samples=0)  #repro #finding #decision #gotcha
+
+**Context:** Phase-0 plateaued at parse_rate ~0.047 (format-bound). Added flag-gated constrained
+decoding to `HFPolicyBackend` (`--constrained-decoding`): a masked-logits decode samples the per-step
+worker index and step count from the policy itself, restricted to legal worker ids and the list
+continue/close tokens; `subtasks`/`access_list` are assembled canonically (`_canonical_workflow`), so
+every proposal passes the parse-gate by construction. Validated free first, then paid on GPU 3.
+**Expected:** parse_rate -> ~1.0 would give GRPO a dense reward signal and let routing accuracy move
+toward / past the 0.808 best-single baseline.
+**Actual (three runs, all metered to `cost_ledger.jsonl`):**
+- Free stub (`--stub-pool --constrained-decoding`): **parse_rate 1.0, $0.00**. Fix confirmed offline.
+- Paid g16x5x8 (64-task pool): healthy but **~5 worker calls/min**, projected ~3-4 h. `collect_group`
+  runs a group's rollouts sequentially and constrained decoding makes the base policy emit ~3-step
+  workflows, so every rollout now dispatches ~3 real worker calls (Phase-0 was fast only because ~95%
+  failed parse and skipped the worker). Killed at **$0.50** / 184 calls to relaunch smaller.
+- Paid g8x3x4 (32-task pool): iter0 `parse 1.0 acc 1.0 reward 1.0`, iter1 `parse 1.0 acc 0.75
+  reward 0.875`. **Every iteration: `samples=0`, `mean_abs_advantage=0.0` -> zero GRPO updates.**
+  iter2 dragged on Fireworks retries (~6+ ledger calls/rollout, > the 5-step cap); killed it since a
+  third `samples=0` line adds nothing. **$1.59** / 465 calls.
+**Root cause (the real finding):** GRPO advantage is computed *within* each question's group of 8
+rollouts. On math500 the strong workers solve (or fail) a given question consistently regardless of
+which one routing picks, so within-group reward variance is ~0 -> std~0 -> all advantages 0 -> the
+update skips every sample. This is the **NEAR_CEILING / 0.29-disagreement oracle result showing up as a
+dead training gradient**: variance lives *between* questions, but GRPO only uses *within*-group
+variance. acc 1.0 at iter0 was a 4-easy-question artifact, not a real beat of 0.808.
+**Fix / decision:** constrained decoding stays (parse_rate 1.0 is a permanent win). Stop spending on
+GRPO over math500 until the gradient problem is addressed.
+**Follow-up:** (1) a clean accuracy-vs-0.808 number needs a held-out eval over ~120 questions, not
+training reward on 4; (2) to get a non-zero gradient: train on the **disagreement subset** (contested
+questions), move to a harder benchmark (AIME/GPQA) where routing flips correctness, or use a
+**cost-aware reward** so a cheaper-but-correct route beats an expensive-but-correct one even when both
+are right; (3) throughput: make `collect_group` run a group's rollouts concurrently (~10x); (4) bias
+the policy toward shorter workflows (multi-step inflated cost/latency ~3x for no accuracy gain here);
+(5) still open: `SyntaxWarning: invalid escape sequence` from a non-raw regex on the worker/grader path.
+Constrained-decoding code committed on branch `fugu-grpo-trainable-backend` (local, not pushed).
+
+---
+
 ## 2026-06-25 — Phase-0 paid GRPO: pipeline works, but parse_rate is the bottleneck (not routing)  #repro #finding #decision
 
 **Context:** first *paid* GRPO run of the trainable HF Conductor (Qwen3-0.6B) on `trinity-gpu`
