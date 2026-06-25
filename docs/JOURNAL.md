@@ -18,6 +18,60 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-25, OpenFugu replication scaffold: Conductor (Fugu-Ultra) over our pool, offline-tested  #decision #finding #todo
+
+**Context:** new branch `openfugu-replication`. Built the Conductor / Fugu-Ultra tier the repo lacks,
+over the existing Fireworks pool (deepseek-v4-pro / glm-5p2 / kimi-k2p6), replicating OpenFugu's design
+natively rather than vendoring it (so the grader stays our FIXED one). New package `src/trinity/fugu/`:
+`workflow.py` (3-list schema + strict parse-gate + executor with access-list topology and bounded
+recursive self-call), `reward.py` (two-stage training reward + PURE-binary `is_correct`), `conductor.py`
+(prompted baseline + stub + trained-LM seam), `grpo.py` (group-normalized advantages, no KL, rollout/loop,
+cost cap), `eval.py` (pure-binary multi-rep eval, emits per-query 0/1 for the oracle diagnostic),
+`cost.py` (per-run pricing, running CostMeter with a spend cap, pre-run estimators).
+**Finding (FP/FN discipline):** correctness flows through `orchestration.reward.score_text` only, so the
+prose-"A" false positive and LiveCodeBench-reward-0 false negative cannot recur; training reward (parse-gate
++ 0.5 partial) is kept strictly separate from the reported pure-binary metric. 21 offline tests pass with
+zero network/GPU/spend. One real bug caught + fixed: `train()` `final_accuracy` KeyError'd when the cost cap
+aborted iteration 0 (the trailing abort record has no accuracy key); now reads the last record that has one.
+**Cost (user asked to track API spend):** every run carries exact per-model token totals (incl. recursion
+and the conductor's own generation); CostMeter aborts at `max_cost_usd`. Projected Fireworks spend
+(conductor served locally, ~2.5 steps/workflow): GRPO Phase-0 smoke ~$1.5, Phase-1 small ~$31, paper-scale
+(G64 x 200it) ~$615; eval 120x3 reps ~$4.3. The bottleneck is paid worker rollouts, not GPU.
+**Decision / follow-up:** the implementation is complete and offline-verified; the only pending piece is the
+trainable HF `PolicyBackend` (GRPO on the H200) and the paid run itself, which is GATED on a budget choice
+(see docs/fugu/REPLICATION_PLAN.md). Phase 0 (~$1.5) validates the loop before any larger spend.
+
+---
+
+## 2026-06-25, Fugu replication research: the gap is the Conductor, not more router tuning  #finding #decision #todo
+
+**Context:** the user asked for a 2026-only literature sweep on Sakana **Fugu** (released 2026-06-22)
+and how to replicate it with open-source models, as the next effort beyond TinyRouter's TRINITY
+routing. Ran a 6-angle multi-agent web workflow with per-angle adversarial recency + measured-vs-marketed
+auditing (14 agents, ~683K tokens). The synthesis agent stubbed its output (`PLACEHOLDER_MAIN`), so the
+dossier was authored by hand from the recovered, verified findings (journal cache in the workflow run dir).
+**Finding:** Fugu = TRINITY (which we already replicate) **plus the Conductor** (arXiv:2512.04388, Nielsen
+et al., ICLR 2026), productized behind one OpenAI-compatible API. The Conductor is a separate ~7B model
+(Qwen2.5-7B) RL-trained with **GRPO (no KL penalty, G=64, two-stage parse+1.0/0.5/0 reward)** that emits a
+natural-language workflow (3 lists: model_id / subtasks / access_list, max 5 steps) and can call itself
+recursively. So closing the Fugu gap is a **second model to build (RL), not a tune of the CMA-ES head**.
+Fugu's *base* tier recipe (SFT on soft per-model performance distributions, then sep-CMA-ES) independently
+**validates** the IMPROVEMENTS.md #2 warm-start + #3 shaped-fitness direction (the 2026-06-24 inconclusive
+retrain); the likely missing ingredient there was soft performance targets, not more shaping.
+**Decision:** wrote the dossier + dedup index to `docs/fugu/` (`FUGU_REPLICATION_RESEARCH.md`,
+`REFERENCE_INDEX.md`). All Fugu/Conductor benchmark numbers are first-party with provider-reported
+baselines; **no independent third-party reproduction exists as of 2026-06-25**, so they are recorded as
+claims, never facts. Closest open prior art is **OpenFugu** (trotsky1997, Apache-2.0: Qwen3-0.6B CMA-ES
+router + a GRPO Llama-3.2-3B Conductor with published HF weights); closest open Conductor *method* template
+is the non-Sakana **Uno-Orchestra** (arXiv:2605.05007).
+**Follow-up:** suggested first experiment (Phase 0 in the dossier §7.4): wrap the existing binary oracle as
+a prime-rl/verifiers RLVR environment and train a Qwen3-0.6B "mini-Conductor" to emit parseable 3-list
+workflows over the current pool, to prove the loop on one H200 before scaling to Qwen3.5-4B. Main open risk
+is rollout economics (GRPO fans out to many paid Fireworks calls). Before locking the recipe, re-read
+`arxiv.org/html/2512.04388v5` to pin GRPO hyperparameters, and audit OpenFugu's `train/`.
+
+---
+
 ## 2026-06-24 — Warm-start + shaped-fitness retrain on math: inconclusive (within noise)  #finding #decision
 
 **Context:** ran the end-to-end #2+#3 pipeline on the box (`scratchpad/run_warm_shaped.sh`): collect
