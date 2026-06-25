@@ -18,6 +18,57 @@ protocol. **Newest entries at the top.** Tag each entry with one or more of:
 
 ---
 
+## 2026-06-25 — Fugu GRPO GPU-3 free smoke completed; schema and stub-cost gotchas fixed  #repro #finding #mistake #decision
+
+**Context:** ran the new HF Conductor backend on `trinity-gpu` with `CUDA_VISIBLE_DEVICES=3` and
+`--stub-pool` to validate model load, sampling, reward grouping, and optimizer update before any Fireworks
+spend.
+**Expected:** Qwen3-0.6B would emit at least some parseable 3-list workflows and the stub run would report
+zero spend.
+**Actual:** first smokes loaded the model but had parse_rate 0.0. Raw proposals showed Qwen3 thinking/scratch
+leakage and common schema slips (`model_id = 0, 1, 2`, `access_list = []` for one-step workflows, `"none"`
+or string indices in access entries). A later smoke hit the GRPO update path but falsely reported `$0.0005`
+because stub worker tokens were priced with the real Fireworks table.
+**Root cause:** the local HF chat template needed thinking disabled for Qwen3-style models; the parse gate was
+too brittle for unambiguous access shorthands; and `scripts/fugu_grpo_train.py --stub-pool` reused real worker
+prices even though no API calls happen.
+**Fix / decision:** `HFPolicyBackend` now calls chat templates with `enable_thinking=False` when supported and
+prefills `model_id = [` to keep generation inside the schema. The parser still requires literal workflow
+lists, but now normalizes unambiguous access shorthands (`[]` for one-step no-context, `"none"`, numeric
+strings). Stub mode uses an all-zero price table.
+**Result:** final free GPU-3 smoke
+`summary_gpu3_stub_group32.json` completed with **spend_usd 0.0**, group_size 32, parse/accuracy **3/32
+= 0.09375**, and a nonzero GRPO update (`samples=32`, `tokens=1860`, mean_abs_advantage 0.583). No Fireworks
+key was sourced and no paid worker calls were made.
+**Follow-up:** paid Phase 0 remains gated on explicit spend approval. The trainable backend is now ready for
+that run, but base Qwen3-0.6B is still format-weak enough that a short format warmup may be worth testing
+before spending on larger GRPO sweeps.
+
+---
+
+## 2026-06-25, Fugu GRPO HF backend built; GPU 3 chosen for the free smoke  #decision #finding #todo
+
+**Context:** next step after the prompted Conductor baseline is the actual GRPO-trained Conductor: test
+whether learned workflow/routing can match or beat the strong prompted multi-step scaffold. User reported
+GPUs 5 and 6 are in use and asked to check GPU 0 or GPU 3.
+**Finding:** `nvidia-smi` on `trinity-gpu` showed GPU 3 essentially idle (5 MiB used), GPU 0 with ~36 GB
+allocated, GPU 5 with ~121 GB used, and GPU 6 active. Remote `/mnt/data/harshal/trinity` is not a git
+checkout but has the project files and a working `.venv` with torch 2.12.1+cu130, transformers, datasets,
+httpx, pyyaml, and accelerate.
+**Decision:** use **GPU 3** for this GRPO smoke as an explicit user-approved exception to the standing
+`AGENTS.md` GPU-5 rule; do not edit the global GPU-5 default. Record the exception here and pass
+`CUDA_VISIBLE_DEVICES=3` only for this run.
+**Implementation:** added `src/trinity/fugu/hf_backend.py`, a lazy-import HF `PolicyBackend` that samples
+3-list workflows with `generate` and applies no-KL GRPO directly in torch by recomputing token NLL for each
+emitted workflow weighted by group-normalized advantages. Added `scripts/fugu_grpo_train.py` with
+`--stub-pool` (free CUDA/model/optimizer smoke) and paid Fireworks mode behind `--max-cost-usd`.
+**Verification so far:** local CPU Fugu tests passed via `PYTHONPATH=src .venv-lite/bin/python
+tests/test_fugu_grpo.py` and `tests/test_fugu_reward.py`; new files compile; remote deps are present.
+**Follow-up:** sync the branch files to the remote project directory, run the **free** `--stub-pool` smoke on
+GPU 3 first, then only run paid Phase 0 if explicitly continuing with spend.
+
+---
+
 ## 2026-06-25, Fugu Conductor prompted-baseline on math500: 0.917 (multi-step lift, not routing); grader dollar FN fixed  #repro #finding #mistake
 
 **Context:** ran the zero-training prompted Conductor (deepseek-v4-pro emits the 3-list workflow; pool

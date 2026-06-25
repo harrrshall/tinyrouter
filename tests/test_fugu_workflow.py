@@ -62,6 +62,45 @@ def test_parse_valid():
     assert wf.steps[0].access == []
 
 
+def test_parse_recovers_later_direct_list_assignments():
+    # Qwen3-0.6B often emits scratch text like "model_id = 0" before the real
+    # block. The parser should skip non-list assignments and recover the later
+    # literal lists without scanning across into unrelated brackets.
+    txt = """
+model_id = 0
+subtasks = ["scratch, not the model list"]
+</think>
+
+model_id = [0, 0, 0]
+subtasks = ["solve", "check", "answer"]
+access_list = ["all", "all", "all"]
+"""
+    wf, ok = parse_workflow(txt, n_workers=3)
+    assert ok and wf is not None
+    assert [s.model_id for s in wf.steps] == [0, 0, 0]
+    assert [s.subtask for s in wf.steps] == ["solve", "check", "answer"]
+
+
+def test_parse_normalizes_common_access_shorthands():
+    one_step = """
+model_id = [0]
+subtasks = ["solve"]
+access_list = []
+"""
+    wf, ok = parse_workflow(one_step, n_workers=3)
+    assert ok and wf is not None
+    assert wf.steps[0].access == []
+
+    txt = """
+model_id = [0, 1, 2]
+subtasks = ["solve", "check", "answer"]
+access_list = ["none", "0", ["1"]]
+"""
+    wf, ok = parse_workflow(txt, n_workers=3)
+    assert ok and wf is not None
+    assert [s.access for s in wf.steps] == [[], [0], [1]]
+
+
 def test_parse_gate_rejects_bad_workflows():
     # missing a list
     assert parse_workflow("model_id=[0]\nsubtasks=['x']", 3)[1] is False

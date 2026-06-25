@@ -130,59 +130,63 @@ def _merge_tokens(dst: dict[str, tuple[int, int]], src: dict[str, tuple[int, int
 # ---------------------------------------------------------------------------
 # Parse-gate (the Conductor's format reward; r=0 on any failure here)
 # ---------------------------------------------------------------------------
-def _extract_bracketed(text: str, name: str) -> str | None:
-    """Return the ``[...]`` literal assigned to ``name`` in ``text``, or ``None``.
+def _extract_bracketed_all(text: str, name: str) -> list[tuple[int, str]]:
+    """Return every ``[...]`` literal directly assigned to ``name``.
 
-    Scans for ``name`` followed by ``=`` or ``:`` then a balanced bracket span,
-    honouring string literals so a ``]`` inside a subtask string does not close
-    the list early. Does not evaluate anything (that is the caller's job, via a
-    safe literal parser).
+    Scans for ``name`` followed by ``=`` or ``:`` and then a balanced bracket
+    span, honouring string literals so a ``]`` inside a subtask string does not
+    close the list early. The bracket must be the next non-whitespace character
+    after the assignment marker; this prevents ``model_id = 0`` from stealing a
+    later ``subtasks = [...]`` list. Does not evaluate anything (that is the
+    caller's job, via a safe literal parser).
     """
-    m = re.search(rf"(?<![\w]){re.escape(name)}\s*[:=]\s*", text)
-    if not m:
-        return None
-    start = text.find("[", m.end())
-    if start == -1:
-        return None
-    depth = 0
-    in_str: str | None = None
-    esc = False
-    i = start
-    while i < len(text):
-        c = text[i]
-        if in_str is not None:
-            if esc:
-                esc = False
-            elif c == "\\":
-                esc = True
-            elif c == in_str:
-                in_str = None
-        else:
-            if c in ("'", '"'):
-                in_str = c
-            elif c == "[":
-                depth += 1
-            elif c == "]":
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1]
-        i += 1
-    return None
+    out: list[tuple[int, str]] = []
+    pat = re.compile(rf"(?<![\w]){re.escape(name)}\s*[:=]\s*")
+    for m in pat.finditer(text):
+        start = text.find("[", m.end())
+        if start == -1:
+            continue
+        if text[m.end():start].strip():
+            continue
+        depth = 0
+        in_str: str | None = None
+        esc = False
+        i = start
+        while i < len(text):
+            c = text[i]
+            if in_str is not None:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == in_str:
+                    in_str = None
+            else:
+                if c in ("'", '"'):
+                    in_str = c
+                elif c == "[":
+                    depth += 1
+                elif c == "]":
+                    depth -= 1
+                    if depth == 0:
+                        out.append((m.start(), text[start : i + 1]))
+                        break
+            i += 1
+    return out
 
 
-def _first_list(text: str, names: tuple[str, ...]) -> list | None:
-    """First of ``names`` that parses to a Python list literal, else ``None``."""
+def _list_candidates(text: str, names: tuple[str, ...]) -> list[tuple[int, list]]:
+    """All ``names`` candidates that parse to Python list literals."""
+    out: list[tuple[int, list]] = []
     for name in names:
-        span = _extract_bracketed(text, name)
-        if span is None:
-            continue
-        try:
-            val = ast.literal_eval(span)
-        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
-            continue
-        if isinstance(val, list):
-            return val
-    return None
+        for pos, span in _extract_bracketed_all(text, name):
+            try:
+                val = ast.literal_eval(span)
+            except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                continue
+            if isinstance(val, list):
+                out.append((pos, val))
+    return sorted(out, key=lambda x: x[0])
 
 
 def _normalize_access(acc: object, step_index: int) -> object | None:
@@ -195,12 +199,30 @@ def _normalize_access(acc: object, step_index: int) -> object | None:
     if acc is None:
         return []
     if isinstance(acc, str):
-        return "all" if acc.strip().lower() == "all" else None
+        s = acc.strip().lower()
+        if s == "all":
+            return "all"
+        if s in {"", "none", "no", "null", "query"}:
+            return []
+        if s.isdigit():
+            j = int(s)
+            return [j] if j < step_index else None
+        return None
     if isinstance(acc, (list, tuple)):
         if len(acc) == 1 and isinstance(acc[0], str) and acc[0].strip().lower() == "all":
             return "all"
+        if len(acc) == 1 and isinstance(acc[0], str) and acc[0].strip().lower() in {
+            "",
+            "none",
+            "no",
+            "null",
+            "query",
+        }:
+            return []
         out: list[int] = []
         for j in acc:
+            if isinstance(j, str) and j.strip().isdigit():
+                j = int(j.strip())
             if isinstance(j, bool) or not isinstance(j, int):
                 return None
             if j < 0 or j >= step_index:
@@ -236,33 +258,62 @@ def parse_workflow(
     """
     if not text or n_workers < 1:
         return None, False
-    models = _first_list(text, _MODEL_KEYS)
-    subtasks = _first_list(text, _SUBTASK_KEYS)
-    access = _first_list(text, _ACCESS_KEYS)
-    if models is None or subtasks is None or access is None:
+    model_candidates = _list_candidates(text, _MODEL_KEYS)
+    subtask_candidates = _list_candidates(text, _SUBTASK_KEYS)
+    access_candidates = _list_candidates(text, _ACCESS_KEYS)
+    if not model_candidates or not subtask_candidates or not access_candidates:
         return None, False
+
+    for m_pos, models in model_candidates:
+        for s_pos, subtasks in subtask_candidates:
+            if s_pos < m_pos:
+                continue
+            for a_pos, access in access_candidates:
+                if a_pos < s_pos:
+                    continue
+                wf = _validate_workflow_lists(
+                    models, subtasks, access,
+                    n_workers=n_workers, max_steps=max_steps, allow_self=allow_self,
+                )
+                if wf is not None:
+                    return wf, True
+    return None, False
+
+
+def _validate_workflow_lists(
+    models: list,
+    subtasks: list,
+    access: list,
+    *,
+    n_workers: int,
+    max_steps: int,
+    allow_self: bool,
+) -> Workflow | None:
+    """Validate one candidate triple of list literals."""
     n = len(models)
     if n == 0 or n > max_steps:
-        return None, False
+        return None
+    if len(access) == 0 and n == 1:
+        access = [[]]
     if not (len(subtasks) == n and len(access) == n):
-        return None, False
+        return None
 
     hi = n_workers if allow_self else n_workers - 1
     steps: list[WorkflowStep] = []
     for i in range(n):
         mid = models[i]
         if isinstance(mid, bool) or not isinstance(mid, int):
-            return None, False
+            return None
         if mid < 0 or mid > hi:
-            return None, False
+            return None
         sub = subtasks[i]
         if not isinstance(sub, str) or not sub.strip():
-            return None, False
+            return None
         norm = _normalize_access(access[i], i)
         if norm is None:
-            return None, False
+            return None
         steps.append(WorkflowStep(model_id=mid, subtask=sub.strip(), access=norm))
-    return Workflow(steps=steps), True
+    return Workflow(steps=steps)
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ sources in [`REFERENCE_INDEX.md`](./REFERENCE_INDEX.md).
 | Honest eval harness (pure binary, multi-rep, oracle-ceiling-compatible) | **built** (`src/trinity/fugu/eval.py`) |
 | API-cost accounting: per-run pricing, running meter, pre-run estimators | **built, offline-tested** (`src/trinity/fugu/cost.py`) |
 | Offline test suite (21 tests, no network/GPU/spend) | **passing** (`tests/test_fugu_*.py`) |
-| Trained-LM backend (HF/TRL GRPO on the H200) | **pending** (the `PolicyBackend` seam; needs the remote box + budget) |
+| Trained-LM backend (HF GRPO on the H200) | **built** (`src/trinity/fugu/hf_backend.py`; direct torch update, no TRL dependency) |
 | The actual paid GRPO training run + rigorous eval | **pending, gated on a budget decision** |
 
 Nothing built so far spends any money or needs a GPU. Everything is exercised by
@@ -50,6 +50,9 @@ src/trinity/fugu/
   conductor.py  Conductor protocol; PromptedConductor (zero-training baseline
                 over a Fireworks model); StubConductor (offline tests). The
                 trained HF policy implements the same protocol.
+  hf_backend.py HFPolicyBackend: a local transformers CausalLM Conductor that
+                samples workflows and applies the no-KL GRPO update directly in
+                torch from group-normalized advantages.
   grpo.py       group_advantages (no KL); collect_group (rollouts + reward +
                 cost meter); train (loop skeleton calling a PolicyBackend.update);
                 CostCapExceeded guard.
@@ -112,24 +115,54 @@ during training, or caching worker answers for repeated (query, subtask) pairs.
 
 ## Running the real training (remote H200, paid)
 
-The only missing piece is a trainable `PolicyBackend` (an HF model fine-tuned by
-GRPO). Recipe:
+The trainable `PolicyBackend` now exists. Recipe:
 
-1. On `trinity-gpu` (GPU 5 only), load a base: Qwen3-0.6B for the cheap Phase 0
-   loop validation, then Qwen3.5-4B for the real Conductor.
-2. Implement `PolicyBackend` (see `grpo.py`): `propose` generates a workflow and
-   returns token log-probs; `update` applies the GRPO policy-gradient step
-   (advantages from `group_advantages`, no KL). TRL or verl supplies the update.
+1. On `trinity-gpu`, load a base: Qwen3-0.6B for the cheap Phase 0 loop
+   validation, then Qwen3.5-4B for the real Conductor. Default project policy is
+   GPU 5, but the 2026-06-25 run uses user-approved GPU 3 because GPUs 5/6 are
+   occupied by the user's jobs.
+2. Use `HFPolicyBackend` (see `hf_backend.py`): `propose` generates a workflow;
+   `update` recomputes token log-probs for the emitted workflow and applies the
+   no-KL GRPO policy-gradient step with `group_advantages`. Qwen3-style chat
+   templates run with thinking disabled when supported, and generation is
+   prefixed with `model_id = [` to keep samples inside the required 3-list
+   schema.
 3. `source ~/.config/trinity/secrets.env`, set `TRINITY_COST_LEDGER`, and run
    `grpo.train(..., cfg=GRPOConfig(max_cost_usd=<cap>))` so spend is capped.
 4. Evaluate with `fugu.eval.evaluate(reps=3)`, then feed `per_query_binary` to
    `scripts/oracle_ceiling.py` for the honest ceiling and CI verdict.
+
+Free CUDA/backend smoke (no Fireworks calls):
+
+```bash
+CUDA_VISIBLE_DEVICES=3 PYTHONPATH=src .venv/bin/python scripts/fugu_grpo_train.py \
+  --stub-pool --benchmark math500 --split train --max-items 1 \
+  --group-size 32 --iterations 1 --questions-per-iter 1 \
+  --max-new-tokens 192 --out-dir experiments/fugu_grpo_smoke
+```
+
+The verified 2026-06-25 smoke (`summary_gpu3_stub_group32.json`) loaded
+Qwen3-0.6B on GPU 3, made no Fireworks calls, reported `spend_usd: 0.0`, and
+exercised a nonzero GRPO update over 32 samples.
+
+Paid Phase 0 smoke (Fireworks workers, cost-capped):
+
+```bash
+source ~/.config/trinity/secrets.env
+CUDA_VISIBLE_DEVICES=3 TRINITY_COST_LEDGER=experiments/fugu_grpo_phase0/ledger.jsonl \
+  PYTHONPATH=src .venv/bin/python scripts/fugu_grpo_train.py \
+  --benchmark math500 --split train --max-items 4 \
+  --group-size 8 --iterations 5 --questions-per-iter 4 \
+  --max-depth 0 --max-cost-usd 2.00 \
+  --out-dir experiments/fugu_grpo_phase0
+```
 
 Phase order: Phase 0 (cheap, prove the loop) before Phase 1 (real Conductor)
 before paper-scale. Stop at the first phase that fails to clear random routing.
 
 ## Open decision
 
-The paid GRPO training run is the one step that costs money and needs the remote
-GPU. Pick a budget tier (Phase 0 ~$1.5, Phase 1 ~$31, paper-scale ~$615) before
-launching. Until then the implementation stands complete and offline-verified.
+The paid GRPO training run is the one step that costs money. Pick a budget tier
+(Phase 0 ~$1.5, Phase 1 ~$31, paper-scale ~$615) before launching beyond the
+free `--stub-pool` smoke. Until then the implementation stands complete and
+offline-verified.
