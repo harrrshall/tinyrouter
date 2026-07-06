@@ -115,7 +115,6 @@ keeping the **eval pure right/wrong**.
 | prior router, same test | 0.792 |
 | random routing | 0.733 |
 
-The retrained router scored 0.808 vs the prior 0.792, but we read this as **inconclusive, not a win**.
 The eval samples each model once per question, and that sampling noise is large: random routing alone
 swung from 0.792 to 0.733 between runs with nothing changed. A swing that size swamps a 1.6-point router
 delta. We did not run the clean control (blank-init, pure-binary, same settings), so there is no causal
