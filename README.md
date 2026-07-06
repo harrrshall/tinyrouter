@@ -90,13 +90,6 @@ lot (0.54 to 0.92), routing clearly helps and the router beats random (0.925 vs 
 all three models sit around 0.79, there is nothing to route around, so the router ties both the best
 model and random routing. Routing pays off when the models genuinely differ.
 
-## Can routing do better? (oracle-ceiling diagnostic)
-
-A tie on math could mean two very different things: either the pool has no headroom (every model is
-equally good or bad on the same questions), or the headroom exists but our router fails to capture it.
-To tell them apart we built a diagnostic that estimates the best score a **perfect** query-conditional
-router could reach, debiased for the winner's-curse with split-half cross-fit, and read the verdict off
-bootstrap confidence intervals rather than point estimates.
 
 | benchmark | best single | perfect router | real headroom (95% CI) | verdict |
 | --- | --- | --- | --- | --- |
